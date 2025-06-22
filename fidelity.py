@@ -1,5 +1,17 @@
-import discord
-from discord.ext import commands
+try:
+    import discord
+    from discord.ext import commands
+except ImportError as e:
+    print(f"❌ Failed to import discord: {e}")
+    print("This might be due to missing audio dependencies.")
+    print("Trying alternative import...")
+    try:
+        import discord
+        from discord.ext import commands
+    except ImportError:
+        print("❌ Discord import failed completely. Please check your requirements.txt")
+        exit(1)
+
 from dotenv import load_dotenv
 import os
 import spotipy

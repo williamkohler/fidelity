@@ -1,0 +1,5 @@
+# Alternative requirements using py-cord instead of discord.py
+# This sometimes has better compatibility with cloud platforms
+py-cord==2.4.1
+python-dotenv==1.0.0
+spotipy==2.23.0 

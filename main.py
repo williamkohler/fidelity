@@ -36,7 +36,7 @@ def main():
     print(f"📁 Working directory: {current_dir}")
     
     # Check if required files exist
-    required_files = ['setup_spotify.py', 'fidelity.py']
+    required_files = ['setup_spotify.py', 'fidelity_no_voice.py']
     missing_files = [f for f in required_files if not Path(f).exists()]
     
     if missing_files:
@@ -50,9 +50,9 @@ def main():
         print("❌ Spotify setup failed. Cannot continue.")
         return False
     
-    # Step 2: Run the Discord bot
+    # Step 2: Run the Discord bot (using no-voice version)
     print("\n🤖 Step 2: Starting Discord bot...")
-    if not run_script('fidelity.py'):
+    if not run_script('fidelity_no_voice.py'):
         print("❌ Discord bot failed to start.")
         return False
     
