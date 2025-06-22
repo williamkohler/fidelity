@@ -170,8 +170,272 @@ async def lastplayed(ctx):
         await ctx.send(f"❌ Error fetching last played song: {str(e)}")
         print(f"Error in lastplayed command: {e}")
 
-# Add the rest of your commands here...
-# (Copy the remaining commands from the original fidelity.py)
+@bot.command()
+async def nowplaying(ctx):
+    """Show the currently playing song on Spotify (if any)"""
+    if not sp:
+        await ctx.send("❌ Spotify client not initialized. Please check your configuration.")
+        return
+        
+    try:
+        current_track = sp.current_playback()
+        
+        if not current_track or not current_track['is_playing']:
+            await ctx.send("🎵 No song is currently playing.")
+            return
+        
+        track = current_track['item']
+        
+        # Create embed for better presentation
+        embed = discord.Embed(
+            title="🎵 Now Playing",
+            color=0x1DB954,  # Spotify green
+            timestamp=datetime.utcnow()
+        )
+        
+        embed.add_field(
+            name="Track",
+            value=f"**{track['name']}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Artist",
+            value=f"**{track['artists'][0]['name']}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Album",
+            value=f"**{track['album']['name']}**",
+            inline=True
+        )
+        
+        # Add progress bar
+        progress_ms = current_track['progress_ms']
+        duration_ms = track['duration_ms']
+        progress_percent = (progress_ms / duration_ms) * 100
+        
+        progress_bar = "▬" * 20
+        progress_pos = int((progress_percent / 100) * 20)
+        progress_bar = progress_bar[:progress_pos] + "🔘" + progress_bar[progress_pos+1:]
+        
+        embed.add_field(
+            name="Progress",
+            value=f"`{progress_bar}` {progress_percent:.1f}%",
+            inline=False
+        )
+        
+        # Add album artwork if available
+        if track['album']['images']:
+            embed.set_thumbnail(url=track['album']['images'][0]['url'])
+        
+        # Add Spotify link
+        embed.add_field(
+            name="Listen on Spotify",
+            value=f"[Open in Spotify]({track['external_urls']['spotify']})",
+            inline=False
+        )
+        
+        embed.set_footer(text="Powered by Spotify API")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg:
+            await ctx.send("❌ **Authentication Error**: Your Spotify token has expired or is invalid. Use `!refresh_spotify` to re-authenticate.")
+        elif "403" in error_msg:
+            await ctx.send("❌ **Permission Error**: The bot doesn't have permission to access your playback state. Please check your Spotify app permissions.")
+        elif "404" in error_msg:
+            await ctx.send("❌ **Not Found**: No active playback found. Make sure you have Spotify open and playing music.")
+        else:
+            await ctx.send(f"❌ Error fetching current song: {error_msg}")
+        print(f"Error in nowplaying command: {e}")
+
+@bot.command()
+async def spotify_status(ctx):
+    """Check if Spotify client is working"""
+    if sp:
+        try:
+            # Try to get user profile to test connection
+            user = sp.current_user()
+            await ctx.send(f"✅ Spotify connected! Logged in as: **{user['display_name']}**")
+        except Exception as e:
+            await ctx.send(f"❌ Spotify client error: {str(e)}")
+    else:
+        await ctx.send("❌ Spotify client not initialized.")
+
+@bot.command()
+async def refresh_spotify(ctx):
+    """Refresh Spotify authentication"""
+    global sp
+    try:
+        # Remove cached token to force re-authentication
+        if os.path.exists(".spotify_cache"):
+            os.remove(".spotify_cache")
+            print("Removed cached Spotify token")
+        
+        await ctx.send("🔄 Refreshing Spotify authentication... Please run the bot again to re-authenticate.")
+        print("Spotify cache cleared. Please restart the bot to re-authenticate.")
+        
+    except Exception as e:
+        await ctx.send(f"❌ Error refreshing Spotify: {str(e)}")
+        print(f"Error refreshing Spotify: {e}")
+
+@bot.command()
+async def fplaylist(ctx, *, song_query):
+    """Add a song to the Discord playlist by searching for it"""
+    if not sp:
+        await ctx.send("❌ Spotify client not initialized. Please check your configuration.")
+        return
+    
+    # Playlist ID extracted from the URL
+    PLAYLIST_ID = "6SgFT2PKfNovHZpP1Egow7"
+    
+    try:
+        # Search for the song
+        await ctx.send(f"🔍 Searching for: **{song_query}**")
+        search_results = sp.search(q=song_query, type='track', limit=5)
+        
+        if not search_results['tracks']['items']:
+            await ctx.send("❌ No songs found matching your search query.")
+            return
+        
+        # Get the first (best) result
+        track = search_results['tracks']['items'][0]
+        
+        # Add the track to the playlist
+        sp.playlist_add_items(PLAYLIST_ID, [track['uri']])
+        
+        # Create embed for confirmation
+        embed = discord.Embed(
+            title="✅ Song Added to Playlist!",
+            description=f"Added to [Discord Playlist](https://open.spotify.com/playlist/{PLAYLIST_ID})",
+            color=0x1DB954,  # Spotify green
+            timestamp=datetime.utcnow()
+        )
+        
+        embed.add_field(
+            name="Track",
+            value=f"**{track['name']}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Artist",
+            value=f"**{track['artists'][0]['name']}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Album",
+            value=f"**{track['album']['name']}**",
+            inline=True
+        )
+        
+        # Add album artwork if available
+        if track['album']['images']:
+            embed.set_thumbnail(url=track['album']['images'][0]['url'])
+        
+        # Add Spotify link
+        embed.add_field(
+            name="Listen on Spotify",
+            value=f"[Open in Spotify]({track['external_urls']['spotify']})",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Added by {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg:
+            await ctx.send("❌ **Authentication Error**: Your Spotify token has expired or is invalid. Use `!refresh_spotify` to re-authenticate.")
+        elif "403" in error_msg:
+            await ctx.send("❌ **Permission Error**: The bot doesn't have permission to modify this playlist. Please check playlist permissions.")
+        elif "404" in error_msg:
+            await ctx.send("❌ **Playlist Not Found**: The playlist could not be found. Please check the playlist ID.")
+        else:
+            await ctx.send(f"❌ Error adding song to playlist: {error_msg}")
+        print(f"Error in addtoplaylist command: {e}")
+
+@bot.command()
+async def addcurrent(ctx):
+    """Add the currently playing song to the Discord playlist"""
+    if not sp:
+        await ctx.send("❌ Spotify client not initialized. Please check your configuration.")
+        return
+    
+    # Playlist ID extracted from the URL
+    PLAYLIST_ID = "6SgFT2PKfNovHZpP1Egow7"
+    
+    try:
+        # Get currently playing track
+        current_track = sp.current_playback()
+        
+        if not current_track or not current_track['is_playing']:
+            await ctx.send("🎵 No song is currently playing. Use `!addtoplaylist <song name>` to search for a song instead.")
+            return
+        
+        track = current_track['item']
+        
+        # Add the track to the playlist
+        sp.playlist_add_items(PLAYLIST_ID, [track['uri']])
+        
+        # Create embed for confirmation
+        embed = discord.Embed(
+            title="✅ Current Song Added to Playlist!",
+            description=f"Added to [Discord Playlist](https://open.spotify.com/playlist/{PLAYLIST_ID})",
+            color=0x1DB954,  # Spotify green
+            timestamp=datetime.utcnow()
+        )
+        
+        embed.add_field(
+            name="Track",
+            value=f"**{track['name']}**",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Artist",
+            value=f"**{track['artists'][0]['name']}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Album",
+            value=f"**{track['album']['name']}**",
+            inline=True
+        )
+        
+        # Add album artwork if available
+        if track['album']['images']:
+            embed.set_thumbnail(url=track['album']['images'][0]['url'])
+        
+        # Add Spotify link
+        embed.add_field(
+            name="Listen on Spotify",
+            value=f"[Open in Spotify]({track['external_urls']['spotify']})",
+            inline=False
+        )
+        
+        embed.set_footer(text=f"Added by {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        error_msg = str(e)
+        if "401" in error_msg:
+            await ctx.send("❌ **Authentication Error**: Your Spotify token has expired or is invalid. Use `!refresh_spotify` to re-authenticate.")
+        elif "403" in error_msg:
+            await ctx.send("❌ **Permission Error**: The bot doesn't have permission to modify this playlist. Please check playlist permissions.")
+        elif "404" in error_msg:
+            await ctx.send("❌ **Playlist Not Found**: The playlist could not be found. Please check the playlist ID.")
+        else:
+            await ctx.send(f"❌ Error adding current song to playlist: {error_msg}")
+        print(f"Error in addcurrent command: {e}")
 
 if __name__ == "__main__":
     if not TOKEN:
