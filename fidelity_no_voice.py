@@ -2,16 +2,27 @@
 import os
 import sys
 
-# Set environment variable to disable voice support
+# Set environment variable to disable voice support BEFORE importing discord
 os.environ['DISCORD_DISABLE_VOICE'] = '1'
+os.environ['DISCORD_NO_VOICE'] = '1'
 
+# Try to import discord with error handling for audioop
 try:
     import discord
     from discord.ext import commands
 except ImportError as e:
-    print(f"❌ Failed to import discord: {e}")
-    print("This might be due to missing audio dependencies.")
-    sys.exit(1)
+    if 'audioop' in str(e):
+        print("❌ Audio dependencies not available on this platform.")
+        print("This is a known issue with discord.py on some cloud platforms.")
+        print("Solutions:")
+        print("1. Use discord.py version 2.0.0 or later")
+        print("2. Install audio dependencies: pip install PyNaCl")
+        print("3. Use a different platform that supports audio dependencies")
+        print(f"Error details: {e}")
+        sys.exit(1)
+    else:
+        print(f"❌ Failed to import discord: {e}")
+        sys.exit(1)
 
 from dotenv import load_dotenv
 import spotipy
@@ -19,6 +30,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from datetime import datetime
 import webbrowser
 import time
+import json
 
 load_dotenv()  # Load environment variables from .env
 

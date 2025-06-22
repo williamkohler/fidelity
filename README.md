@@ -67,6 +67,44 @@ This will:
 python fidelity.py
 ```
 
+## Deployment on Render
+
+### Prerequisites
+
+1. Make sure you have all the required environment variables set in your Render dashboard:
+   - `DISCORD_TOKEN`
+   - `SPOTIFY_CLIENT_ID`
+   - `SPOTIFY_CLIENT_SECRET`
+   - `SPOTIFY_REDIRECT_URI`
+
+### Spotify Authentication for Render
+
+Since Render doesn't support interactive authentication, you need to pre-authenticate and provide the token:
+
+1. **Run the token generator locally:**
+   ```bash
+   python generate_token.py
+   ```
+
+2. **Follow the authentication process** - this will output a JSON token
+
+3. **Add the token to Render:**
+   - Go to your Render service dashboard
+   - Navigate to Environment → Environment Variables
+   - Add a new variable:
+     - Key: `SPOTIFY_TOKEN`
+     - Value: [paste the JSON token from step 2]
+
+4. **Redeploy your application**
+
+### Alternative: Upload Cache File
+
+If you prefer to use the cache file method:
+
+1. Run `python setup_spotify.py` locally
+2. Upload the generated `.spotify_cache` file to your Render deployment
+3. Make sure the file is in the root directory of your project
+
 ## Usage
 
 Once the bot is running and connected to your Discord server, you can use these commands:
@@ -93,12 +131,20 @@ Once the bot is running and connected to your Discord server, you can use these 
 - If not connected, run `python setup_spotify.py` again
 - Make sure you have an active Spotify account and have played music recently
 
+### Render Deployment Issues
+- **Audioop Import Error**: This is resolved by using the HTTP-based bot version (`fidelity_http.py`)
+- **Authentication Issues**: Use the `generate_token.py` script to create a token for environment variables
+- **Missing Dependencies**: Make sure `PyNaCl` is included in your requirements.txt
+
 ## File Structure
 
 ```
 fidelity/
-├── fidelity.py          # Main Discord bot
+├── fidelity.py          # Main Discord bot (discord.py version)
+├── fidelity_http.py     # HTTP-based Discord bot (no audio dependencies)
+├── fidelity_no_voice.py # Discord bot with voice disabled
 ├── setup_spotify.py     # Spotify authentication helper
+├── generate_token.py    # Token generator for Render deployment
 ├── requirements.txt     # Python dependencies
 ├── README.md           # This file
 ├── .env                # Environment variables (create this)
