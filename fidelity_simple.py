@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-HTTP-based Discord bot that avoids audio dependencies
-This version uses Discord's Gateway API to listen for commands
+Simple Discord bot that uses polling to avoid WebSocket dependencies
+This version periodically checks for new messages and responds to commands
 """
 
 import os
@@ -9,8 +9,6 @@ import sys
 import json
 import time
 import requests
-import websocket
-import threading
 from dotenv import load_dotenv
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
@@ -101,7 +99,7 @@ def create_spotify_client():
 # Initialize Spotify client
 sp = create_spotify_client()
 
-class DiscordBot:
+class SimpleDiscordBot:
     def __init__(self, token):
         self.token = token
         self.headers = {
@@ -110,18 +108,35 @@ class DiscordBot:
         }
         self.session = requests.Session()
         self.session.headers.update(self.headers)
-        self.ws = None
-        self.sequence = None
-        self.heartbeat_interval = None
-        self.last_heartbeat = 0
+        self.last_message_id = None
+        self.processed_messages = set()
         
-    def get_gateway_url(self):
-        """Get the WebSocket gateway URL"""
-        response = self.session.get(f"{DISCORD_API_BASE}/gateway")
+    def get_guilds(self):
+        """Get list of guilds (servers) the bot is in"""
+        response = self.session.get(f"{DISCORD_API_BASE}/users/@me/guilds")
         if response.status_code == 200:
-            return response.json()["url"]
+            return response.json()
         else:
-            raise Exception(f"Failed to get gateway URL: {response.status_code}")
+            print(f"Failed to get guilds: {response.status_code}")
+            return []
+    
+    def get_channels(self, guild_id):
+        """Get list of channels in a guild"""
+        response = self.session.get(f"{DISCORD_API_BASE}/guilds/{guild_id}/channels")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Failed to get channels: {response.status_code}")
+            return []
+    
+    def get_messages(self, channel_id, limit=10):
+        """Get recent messages from a channel"""
+        response = self.session.get(f"{DISCORD_API_BASE}/channels/{channel_id}/messages?limit={limit}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Failed to get messages: {response.status_code}")
+            return []
     
     def send_message(self, channel_id, content, embed=None):
         """Send a message to a Discord channel"""
@@ -162,16 +177,28 @@ class DiscordBot:
         
         return embed
     
-    def on_message(self, message_data):
-        """Handle incoming messages"""
+    def handle_command(self, message_data):
+        """Handle bot commands"""
         try:
             content = message_data.get('content', '')
             channel_id = message_data.get('channel_id')
             author = message_data.get('author', {})
+            message_id = message_data.get('id')
             
             # Ignore messages from bots
             if author.get('bot', False):
                 return
+            
+            # Ignore already processed messages
+            if message_id in self.processed_messages:
+                return
+            
+            # Add to processed messages
+            self.processed_messages.add(message_id)
+            
+            # Keep only last 1000 processed messages to avoid memory issues
+            if len(self.processed_messages) > 1000:
+                self.processed_messages = set(list(self.processed_messages)[-500:])
             
             # Check if message starts with command prefix
             if not content.startswith('!'):
@@ -283,109 +310,33 @@ class DiscordBot:
                 self.send_message(channel_id, f"Unknown command: {command}")
                 
         except Exception as e:
-            print(f"Error handling message: {e}")
+            print(f"Error handling command: {e}")
     
-    def on_websocket_message(self, ws, message):
-        """Handle WebSocket messages"""
-        try:
-            data = json.loads(message)
-            op = data.get('op')
-            d = data.get('d')
-            s = data.get('s')
-            
-            if s is not None:
-                self.sequence = s
-            
-            if op == 10:  # Hello
-                self.heartbeat_interval = d['heartbeat_interval'] / 1000
-                print(f"Received heartbeat interval: {self.heartbeat_interval}s")
-                
-                # Start heartbeat thread
-                threading.Thread(target=self.heartbeat_loop, daemon=True).start()
-            
-            elif op == 0:  # Dispatch
-                t = data.get('t')
-                if t == 'MESSAGE_CREATE':
-                    self.on_message(d)
-            
-        except Exception as e:
-            print(f"Error processing WebSocket message: {e}")
-    
-    def heartbeat_loop(self):
-        """Send heartbeat messages"""
-        while True:
-            try:
-                if self.heartbeat_interval is None:
-                    print("Heartbeat interval not set, stopping heartbeat loop")
-                    break
-                    
-                time.sleep(float(self.heartbeat_interval))
-                if self.ws and self.ws.sock:
-                    heartbeat = {
-                        "op": 1,
-                        "d": self.sequence
-                    }
-                    self.ws.send(json.dumps(heartbeat))
-                    print("Sent heartbeat")
-            except Exception as e:
-                print(f"Heartbeat error: {e}")
-                break
-    
-    def connect(self):
-        """Connect to Discord Gateway"""
-        gateway_url = self.get_gateway_url()
-        ws_url = f"{gateway_url}?v=10&encoding=json"
+    def run(self):
+        """Run the bot with polling"""
+        print("🤖 Starting simple Discord bot...")
         
-        print(f"Connecting to Discord Gateway: {ws_url}")
+        # Get guilds (servers) the bot is in
+        guilds = self.get_guilds()
+        if not guilds:
+            print("❌ Bot is not in any servers!")
+            return
         
-        # Identify payload
-        identify = {
-            "op": 2,
-            "d": {
-                "token": self.token,
-                "intents": 32768,  # Message Content Intent
-                "properties": {
-                    "os": "linux",
-                    "browser": "fidelity_bot",
-                    "device": "fidelity_bot"
-                }
-            }
-        }
+        print(f"✅ Bot is in {len(guilds)} server(s)")
         
-        def on_message(ws, message):
-            self.on_websocket_message(ws, message)
+        # Get all text channels from all guilds
+        all_channels = []
+        for guild in guilds:
+            guild_id = guild['id']
+            channels = self.get_channels(guild_id)
+            text_channels = [ch for ch in channels if ch['type'] == 0]  # 0 = text channel
+            all_channels.extend(text_channels)
         
-        def on_error(ws, error):
-            print(f"WebSocket error: {error}")
+        if not all_channels:
+            print("❌ No text channels found!")
+            return
         
-        def on_close(ws, close_status_code, close_msg):
-            print("WebSocket connection closed")
-        
-        def on_open(ws):
-            print("WebSocket connection opened, sending identify...")
-            ws.send(json.dumps(identify))
-        
-        # Create WebSocket connection
-        self.ws = websocket.WebSocketApp(
-            ws_url,
-            on_open=on_open,
-            on_message=on_message,
-            on_error=on_error,
-            on_close=on_close
-        )
-        
-        self.ws.run_forever()
-
-def main():
-    """Main function"""
-    if not DISCORD_TOKEN:
-        print("❌ DISCORD_TOKEN not found in environment variables!")
-        sys.exit(1)
-    
-    print("🤖 Starting Discord bot...")
-    
-    try:
-        bot = DiscordBot(DISCORD_TOKEN)
+        print(f"✅ Monitoring {len(all_channels)} text channel(s)")
         
         if sp:
             try:
@@ -401,9 +352,36 @@ def main():
         print("- !lastplayed")
         print("- !nowplaying")
         print("- !spotify_status")
+        print("\nPolling for messages every 5 seconds...")
         
-        # Connect to Discord
-        bot.connect()
+        # Poll for messages
+        while True:
+            try:
+                for channel in all_channels:
+                    channel_id = channel['id']
+                    messages = self.get_messages(channel_id, limit=5)
+                    
+                    for message in messages:
+                        self.handle_command(message)
+                
+                time.sleep(5)  # Poll every 5 seconds
+                
+            except KeyboardInterrupt:
+                print("\n👋 Bot stopped by user.")
+                break
+            except Exception as e:
+                print(f"❌ Polling error: {e}")
+                time.sleep(10)  # Wait longer on error
+
+def main():
+    """Main function"""
+    if not DISCORD_TOKEN:
+        print("❌ DISCORD_TOKEN not found in environment variables!")
+        sys.exit(1)
+    
+    try:
+        bot = SimpleDiscordBot(DISCORD_TOKEN)
+        bot.run()
         
     except Exception as e:
         print(f"❌ Bot error: {e}")
