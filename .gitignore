@@ -3,6 +3,9 @@ venv/
 env/
 ENV/
 
+# Cache
+.spotify_cache/
+
 # Python
 __pycache__/
 *.py[cod]
