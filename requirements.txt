@@ -1,4 +1,7 @@
 # Add your Python dependencies here
 # Example:
 # requests==2.31.0
-# pandas==2.1.0 
+# pandas==2.1.0
+discord.py==2.3.2
+python-dotenv==1.0.0
+spotipy==2.23.0 
